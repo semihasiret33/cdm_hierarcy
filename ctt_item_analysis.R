@@ -167,15 +167,21 @@ cat("Güvenirlik analizi yapılıyor...\n")
 alpha_result <- psych::alpha(score_matrix, check.keys = TRUE)
 cronbach_alpha <- alpha_result$total$raw_alpha
 
-# KR-20 (Kuder-Richardson Formula 20)
-kr20 <- psych::KR20(score_matrix)
+# KR-20 (Kuder-Richardson Formula 20) - Manuel hesaplama
+# KR-20 = (k/(k-1)) * (1 - Σ(p*q) / σ²)
+k <- n_items
+item_variances <- apply(score_matrix, 2, var, na.rm = TRUE)
+sum_pq <- sum(item_variances)  # p*q = variance for binary items
+total_variance <- var(total_scores, na.rm = TRUE)
+
+kr20_value <- (k / (k - 1)) * (1 - (sum_pq / total_variance))
 
 # Split-half güvenirliği
 split_half <- psych::splitHalf(score_matrix)
 
 cat(sprintf("\nGüvenirlik Katsayıları:\n"))
 cat(sprintf("Cronbach's Alpha: %.3f\n", cronbach_alpha))
-cat(sprintf("KR-20: %.3f\n", kr20$KR20))
+cat(sprintf("KR-20: %.3f\n", kr20_value))
 cat(sprintf("Split-Half (Spearman-Brown): %.3f\n", split_half$sb))
 
 # Alpha if item deleted
@@ -631,7 +637,7 @@ cat("---------------------------------------------------------------------------
 cat("3. GÜVENİRLİK ANALİZİ\n")
 cat("--------------------------------------------------------------------------------\n")
 cat(sprintf("Cronbach's Alpha: %.4f\n", cronbach_alpha))
-cat(sprintf("KR-20 (Kuder-Richardson): %.4f\n", kr20$KR20))
+cat(sprintf("KR-20 (Kuder-Richardson): %.4f\n", kr20_value))
 cat(sprintf("Split-Half (Spearman-Brown): %.4f\n\n", split_half$sb))
 
 cat("Güvenirlik Yorumu:\n")
@@ -970,7 +976,7 @@ for (row_idx in 1:nrow(metadata)) {
     officer::body_add_par("Güvenirlik Katsayıları", style = "heading 2") %>%
     officer::body_add_par(sprintf("Cronbach's Alpha: %.4f", cronbach_alpha),
                          style = "Normal") %>%
-    officer::body_add_par(sprintf("KR-20: %.4f", kr20$KR20),
+    officer::body_add_par(sprintf("KR-20: %.4f", kr20_value),
                          style = "Normal") %>%
     officer::body_add_par(sprintf("Split-Half (Spearman-Brown): %.4f", split_half$sb),
                          style = "Normal") %>%
@@ -1230,7 +1236,7 @@ if (cronbach_alpha >= 0.80) {
 } else {
   cat(" (Düşük güvenilirlik - revizyon gerekli ⚠)\n")
 }
-cat(sprintf("  • KR-20: %.4f\n", kr20$KR20))
+cat(sprintf("  • KR-20: %.4f\n", kr20_value))
 cat(sprintf("  • Split-Half: %.4f\n\n", split_half$sb))
 
 cat("TEST ÖZETİ:\n")
