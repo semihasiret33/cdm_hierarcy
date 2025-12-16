@@ -57,8 +57,10 @@ Profesyonel seviyede, kapsamlı Klasik Test Kuramı madde analizi R scripti. Eğ
 ### Raporlama / Reporting
 - 📄 Kapsamlı metin raporu (Türkçe)
 - 📄 Uzman önerileri ve yorumlar
+- 📄 **Word formatında profesyonel raporlar** (officer paketi ile) ⭐
 - 📊 CSV formatında tüm istatistikler
 - 📈 Yüksek kaliteli PDF grafikler
+- 🔄 **Çoklu kitapçık desteği** (metadata.xlsx ile)
 
 ---
 
@@ -80,7 +82,11 @@ install.packages(c(
   "knitr",         # Rapor oluşturma / Report generation
   "dplyr",         # Veri manipülasyonu / Data manipulation
   "tidyr",         # Veri temizleme / Data tidying
-  "CTT"            # Klasik Test Kuramı / Classical Test Theory
+  "CTT",           # Klasik Test Kuramı / Classical Test Theory
+  "officer",       # Word belgeleri / Word documents
+  "flextable",     # Tablo formatları / Table formatting
+  "readxl",        # Excel okuma / Excel reading
+  "openxlsx"       # Excel yazma / Excel writing
 ))
 ```
 
@@ -150,6 +156,32 @@ A;A;A;A;B;B;B;B;C;C
 A;B;C;D;A;B;C;D;A;B
 ```
 
+### Metadata Dosyası (metadata.xlsx) - OPSİYONEL
+
+- **Format:** Excel dosyası (.xlsx)
+- **Sayfa:** Sayfa1 (veya ilk sayfa)
+- **Sütunlar:** Program, alan, kitapcik, beceri, TemelEgit, Turkce, Sorguulama
+- **Her satır:** Bir test kitapçığını temsil eder
+
+**Örnek:**
+
+| Program | alan | kitapcik | beceri | TemelEgit | Turkce | Sorguulama |
+|---------|------|----------|--------|-----------|--------|------------|
+| TemelEgit | Turkce | A | Okuma | Evet | Evet | 1 |
+| TemelEgit | Matematik | B | Sayilar | Evet | Hayir | 1 |
+| Ortaokul | Matematik | A | Cebir | Hayir | Hayir | 2 |
+
+**Dosya Adı Oluşturma:**
+Word raporları için dosya adı şu formatta oluşturulur:
+```
+Program_alan_Kitapcik_X_beceri_TemelEgit_Turkce_Sorgulama_N.docx
+```
+
+**Örnek:**
+```
+TemelEgit_Turkce_Kitapcik_A_Okuma_Evet_Evet_Sorgulama_1.docx
+```
+
 ---
 
 ## 📊 Çıktılar / Outputs
@@ -162,6 +194,7 @@ Tüm çıktılar `output/` klasöründe oluşturulur:
 |-------|----------|
 | `item_analysis_report.txt` | Kapsamlı madde analizi raporu (Türkçe) |
 | `recommendations.txt` | Uzman önerileri ve test kalite değerlendirmesi |
+| `*.docx` | Word formatında profesyonel raporlar (her kitapçık için) ⭐ |
 
 ### Veri Dosyaları / Data Files (CSV)
 

@@ -8,7 +8,8 @@
 
 # Gerekli kütüphaneleri yükle
 required_packages <- c("ItemAnalysis", "psych", "ggplot2", "reshape2", "gridExtra",
-                       "corrplot", "knitr", "dplyr", "tidyr", "CTT")
+                       "corrplot", "knitr", "dplyr", "tidyr", "CTT",
+                       "officer", "flextable", "readxl")
 
 # Eksik paketleri kontrol et ve yükle
 for (pkg in required_packages) {
@@ -24,8 +25,29 @@ for (pkg in required_packages) {
 
 cat("\n=== KLASİK TEST KURAMI MADDE ANALİZİ ===\n\n")
 
+# Metadata dosyasını yükle (Excel'den)
+cat("Metadata bilgileri yükleniyor...\n")
+if (file.exists("metadata.xlsx")) {
+  metadata <- readxl::read_excel("metadata.xlsx", sheet = 1)
+  cat(sprintf("Toplam %d kitapçık bulundu.\n", nrow(metadata)))
+  use_metadata <- TRUE
+} else {
+  cat("UYARI: metadata.xlsx dosyası bulunamadı. Tek analiz modu kullanılacak.\n")
+  use_metadata <- FALSE
+  metadata <- data.frame(
+    Program = "Genel",
+    alan = "Matematik",
+    kitapcik = "A",
+    beceri = "Genel",
+    TemelEgit = "Temel",
+    Turkce = "Evet",
+    Sorguulama = 1,
+    stringsAsFactors = FALSE
+  )
+}
+
 # Veri dosyalarını yükle
-cat("Veri yükleniyor...\n")
+cat("\nVeri yükleniyor...\n")
 data <- read.table("mezitli_iho_mat_ham_data.csv", header = FALSE, sep = ";")
 key <- read.csv("mezitli_iho_mat_key.csv", header = FALSE, sep = ";",
                 colClasses = "character")
@@ -863,6 +885,311 @@ cat("===========================================================================
 sink()
 
 ################################################################################
+# 11. WORD RAPORU OLUŞTURMA (OFFICER PAKETI)
+################################################################################
+
+cat("\nWord raporu oluşturuluyor...\n")
+
+# Her satır (kitapçık) için Word raporu oluştur
+for (row_idx in 1:nrow(metadata)) {
+  meta_row <- metadata[row_idx, ]
+
+  # Dosya adı oluştur (Excel sütunlarından)
+  filename_parts <- c(
+    as.character(meta_row$Program),
+    as.character(meta_row$alan),
+    paste0("Kitapcik_", as.character(meta_row$kitapcik)),
+    as.character(meta_row$beceri),
+    as.character(meta_row$TemelEgit),
+    as.character(meta_row$Turkce),
+    paste0("Sorgulama_", as.character(meta_row$Sorguulama))
+  )
+
+  # Boşlukları ve özel karakterleri temizle
+  filename_parts <- gsub(" ", "_", filename_parts)
+  filename_parts <- gsub("[^[:alnum:]_-]", "", filename_parts)
+
+  doc_filename <- paste0("output/", paste(filename_parts, collapse = "_"), ".docx")
+
+  cat(sprintf("  - %s oluşturuluyor...\n", basename(doc_filename)))
+
+  # Yeni Word belgesi oluştur
+  doc <- officer::read_docx()
+
+  # Başlık ekle
+  doc <- doc %>%
+    officer::body_add_par("KLASİK TEST KURAMI MADDE ANALİZİ RAPORU",
+                         style = "heading 1") %>%
+    officer::body_add_par("Classical Test Theory Item Analysis Report",
+                         style = "heading 2") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Metadata bilgilerini ekle
+  doc <- doc %>%
+    officer::body_add_par("Test Bilgileri", style = "heading 2") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Metadata tablosu oluştur
+  meta_df <- data.frame(
+    Özellik = c("Program", "Alan", "Kitapçık", "Beceri", "Temel Eğitim",
+                "Türkçe", "Sorgulama", "Analiz Tarihi"),
+    Değer = c(
+      as.character(meta_row$Program),
+      as.character(meta_row$alan),
+      as.character(meta_row$kitapcik),
+      as.character(meta_row$beceri),
+      as.character(meta_row$TemelEgit),
+      as.character(meta_row$Turkce),
+      as.character(meta_row$Sorguulama),
+      as.character(Sys.Date())
+    ),
+    stringsAsFactors = FALSE
+  )
+
+  ft_meta <- flextable::flextable(meta_df)
+  ft_meta <- flextable::theme_vanilla(ft_meta)
+  ft_meta <- flextable::autofit(ft_meta)
+
+  doc <- doc %>%
+    flextable::body_add_flextable(ft_meta) %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Genel bilgiler
+  doc <- doc %>%
+    officer::body_add_par("Genel Bilgiler", style = "heading 2") %>%
+    officer::body_add_par(sprintf("Toplam Öğrenci Sayısı: %d", n_students),
+                         style = "Normal") %>%
+    officer::body_add_par(sprintf("Toplam Madde Sayısı: %d", n_items),
+                         style = "Normal") %>%
+    officer::body_add_par(sprintf("Maksimum Puan: %d", n_items),
+                         style = "Normal") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Güvenirlik katsayıları
+  doc <- doc %>%
+    officer::body_add_par("Güvenirlik Katsayıları", style = "heading 2") %>%
+    officer::body_add_par(sprintf("Cronbach's Alpha: %.4f", cronbach_alpha),
+                         style = "Normal") %>%
+    officer::body_add_par(sprintf("KR-20: %.4f", kr20$KR20),
+                         style = "Normal") %>%
+    officer::body_add_par(sprintf("Split-Half (Spearman-Brown): %.4f", split_half$sb),
+                         style = "Normal") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Güvenirlik yorumu
+  reliability_comment <- if (cronbach_alpha >= 0.90) {
+    "Mükemmel güvenirlik (α ≥ 0.90)"
+  } else if (cronbach_alpha >= 0.80) {
+    "İyi güvenirlik (0.80 ≤ α < 0.90)"
+  } else if (cronbach_alpha >= 0.70) {
+    "Kabul edilebilir güvenirlik (0.70 ≤ α < 0.80)"
+  } else if (cronbach_alpha >= 0.60) {
+    "Sorgulanabilir güvenirlik (0.60 ≤ α < 0.70)"
+  } else {
+    "Kabul edilemez güvenirlik (α < 0.60)"
+  }
+
+  doc <- doc %>%
+    officer::body_add_par(paste("Yorum:", reliability_comment), style = "Normal") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Betimsel istatistikler
+  doc <- doc %>%
+    officer::body_add_par("Betimsel İstatistikler", style = "heading 2") %>%
+    officer::body_add_par("", style = "Normal")
+
+  ft_desc <- flextable::flextable(descriptive_stats)
+  ft_desc <- flextable::theme_vanilla(ft_desc)
+  ft_desc <- flextable::autofit(ft_desc)
+  ft_desc <- flextable::colformat_double(ft_desc, j = "Value", digits = 3)
+
+  doc <- doc %>%
+    flextable::body_add_flextable(ft_desc) %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Madde istatistikleri özeti
+  doc <- doc %>%
+    officer::body_add_par("Madde İstatistikleri Özeti", style = "heading 2") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # İlk 20 maddeyi göster (sayfa sınırı nedeniyle)
+  items_to_show <- min(20, n_items)
+  item_stats_subset <- item_statistics[1:items_to_show, ]
+
+  ft_items <- flextable::flextable(item_stats_subset)
+  ft_items <- flextable::theme_vanilla(ft_items)
+  ft_items <- flextable::fontsize(ft_items, size = 8, part = "all")
+  ft_items <- flextable::autofit(ft_items)
+  ft_items <- flextable::colformat_double(ft_items,
+                                          j = c("Item_Difficulty", "Item_Discrimination_PtBis",
+                                               "Item_Discrimination_PtBis_Corrected",
+                                               "Mean_Score", "SD", "Alpha_if_Deleted"),
+                                          digits = 3)
+
+  doc <- doc %>%
+    flextable::body_add_flextable(ft_items) %>%
+    officer::body_add_par("", style = "Normal")
+
+  if (n_items > 20) {
+    doc <- doc %>%
+      officer::body_add_par(sprintf("Not: Sadece ilk %d madde gösterilmektedir. Tüm maddeler için CSV dosyasını inceleyiniz.",
+                                   items_to_show),
+                           style = "Normal") %>%
+      officer::body_add_par("", style = "Normal")
+  }
+
+  # Çeldirici etkinlik özeti
+  doc <- doc %>%
+    officer::body_add_par("Çeldirici Etkinlik Özeti", style = "heading 2") %>%
+    officer::body_add_par("", style = "Normal")
+
+  dist_eff_subset <- distractor_effectiveness[1:items_to_show, ]
+
+  ft_dist <- flextable::flextable(dist_eff_subset)
+  ft_dist <- flextable::theme_vanilla(ft_dist)
+  ft_dist <- flextable::fontsize(ft_dist, size = 8, part = "all")
+  ft_dist <- flextable::autofit(ft_dist)
+  ft_dist <- flextable::colformat_double(ft_dist,
+                                         j = c("Key_Selected_Pct", "Key_PtBis"),
+                                         digits = 2)
+
+  doc <- doc %>%
+    flextable::body_add_flextable(ft_dist) %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Sorunlu maddeler
+  doc <- doc %>%
+    officer::body_add_par("Sorunlu Maddeler", style = "heading 2") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Negatif ayırt edicilik
+  negative_disc_items <- item_statistics[item_statistics$Item_Discrimination_PtBis_Corrected < 0, ]
+  if (nrow(negative_disc_items) > 0) {
+    doc <- doc %>%
+      officer::body_add_par("Negatif Ayırt Ediciliğe Sahip Maddeler:",
+                           style = "heading 3")
+
+    ft_neg <- flextable::flextable(negative_disc_items[, c("Item_No", "Item_Difficulty",
+                                                            "Item_Discrimination_PtBis_Corrected")])
+    ft_neg <- flextable::theme_vanilla(ft_neg)
+    ft_neg <- flextable::autofit(ft_neg)
+
+    doc <- doc %>%
+      flextable::body_add_flextable(ft_neg) %>%
+      officer::body_add_par("Bu maddeler testten çıkarılmalı veya yeniden yazılmalıdır.",
+                           style = "Normal") %>%
+      officer::body_add_par("", style = "Normal")
+  } else {
+    doc <- doc %>%
+      officer::body_add_par("Negatif ayırt ediciliğe sahip madde bulunmamaktadır. ✓",
+                           style = "Normal") %>%
+      officer::body_add_par("", style = "Normal")
+  }
+
+  # Çok zor maddeler
+  very_hard_items <- item_statistics[item_statistics$Item_Difficulty < 0.20, ]
+  if (nrow(very_hard_items) > 0) {
+    doc <- doc %>%
+      officer::body_add_par(sprintf("Çok Zor Maddeler (p < 0.20): %d madde",
+                                   nrow(very_hard_items)),
+                           style = "heading 3")
+
+    ft_hard <- flextable::flextable(very_hard_items[, c("Item_No", "Item_Difficulty",
+                                                         "Item_Discrimination_PtBis_Corrected")])
+    ft_hard <- flextable::theme_vanilla(ft_hard)
+    ft_hard <- flextable::autofit(ft_hard)
+
+    doc <- doc %>%
+      flextable::body_add_flextable(ft_hard) %>%
+      officer::body_add_par("", style = "Normal")
+  }
+
+  # Çok kolay maddeler
+  very_easy_items <- item_statistics[item_statistics$Item_Difficulty > 0.80, ]
+  if (nrow(very_easy_items) > 0) {
+    doc <- doc %>%
+      officer::body_add_par(sprintf("Çok Kolay Maddeler (p > 0.80): %d madde",
+                                   nrow(very_easy_items)),
+                           style = "heading 3")
+
+    ft_easy <- flextable::flextable(very_easy_items[, c("Item_No", "Item_Difficulty",
+                                                         "Item_Discrimination_PtBis_Corrected")])
+    ft_easy <- flextable::theme_vanilla(ft_easy)
+    ft_easy <- flextable::autofit(ft_easy)
+
+    doc <- doc %>%
+      flextable::body_add_flextable(ft_easy) %>%
+      officer::body_add_par("", style = "Normal")
+  }
+
+  # Test kalite skoru
+  doc <- doc %>%
+    officer::body_add_par("Test Kalite Değerlendirmesi", style = "heading 2") %>%
+    officer::body_add_par(sprintf("Test Kalite Skoru: %d/100", quality_score),
+                         style = "Normal") %>%
+    officer::body_add_par("", style = "Normal")
+
+  quality_comment <- if (quality_score >= 80) {
+    "✓ Test yüksek kalitededir ve kullanıma hazırdır."
+  } else if (quality_score >= 60) {
+    "⚠ Test kabul edilebilir kalitededir. Bazı iyileştirmeler yapılabilir."
+  } else if (quality_score >= 40) {
+    "⚠ Test orta kalitededir. Önemli revizyonlar gereklidir."
+  } else {
+    "✗ Test düşük kalitededir. Kapsamlı revizyon gereklidir."
+  }
+
+  doc <- doc %>%
+    officer::body_add_par(quality_comment, style = "Normal") %>%
+    officer::body_add_par("", style = "Normal")
+
+  # Detaylı çeldirici analizi (ilk 5 madde)
+  doc <- doc %>%
+    officer::body_add_par("Detaylı Çeldirici Analizi (İlk 5 Madde)", style = "heading 2") %>%
+    officer::body_add_par("", style = "Normal")
+
+  items_dist_show <- min(5, n_items)
+  for (i in 1:items_dist_show) {
+    doc <- doc %>%
+      officer::body_add_par(sprintf("Madde %d (Doğru Cevap: %s)", i, answer_key[i]),
+                           style = "heading 3") %>%
+      officer::body_add_par(sprintf("Çeldirici Kalitesi: %s",
+                                   distractor_effectiveness$Distractor_Quality[i]),
+                           style = "Normal")
+
+    ft_dist_item <- flextable::flextable(distractor_analysis[[i]])
+    ft_dist_item <- flextable::theme_vanilla(ft_dist_item)
+    ft_dist_item <- flextable::fontsize(ft_dist_item, size = 7, part = "all")
+    ft_dist_item <- flextable::autofit(ft_dist_item)
+    ft_dist_item <- flextable::colformat_double(ft_dist_item,
+                                                j = c("Percentage", "Point_Biserial",
+                                                     "Upper_27_Pct", "Middle_46_Pct",
+                                                     "Lower_27_Pct", "Discrimination_Index",
+                                                     "Mean_Total_Score"),
+                                                digits = 2)
+
+    doc <- doc %>%
+      flextable::body_add_flextable(ft_dist_item) %>%
+      officer::body_add_par("", style = "Normal")
+  }
+
+  # Footer
+  doc <- doc %>%
+    officer::body_add_par("", style = "Normal") %>%
+    officer::body_add_par(paste("Rapor Oluşturma Tarihi:", Sys.time()),
+                         style = "Normal") %>%
+    officer::body_add_par("Bu rapor Klasik Test Kuramı (CTT) prensiplerine göre otomatik olarak oluşturulmuştur.",
+                         style = "Normal")
+
+  # Word dosyasını kaydet
+  print(doc, target = doc_filename)
+
+  cat(sprintf("    ✓ %s kaydedildi.\n", basename(doc_filename)))
+}
+
+cat(sprintf("\nToplam %d Word raporu oluşturuldu.\n", nrow(metadata)))
+
+################################################################################
 # SONUÇ MESAJI
 ################################################################################
 
@@ -873,7 +1200,8 @@ cat("===========================================================================
 
 cat("OLUŞTURULAN RAPORLAR:\n")
 cat("  📄 output/item_analysis_report.txt          - Ana madde analizi raporu\n")
-cat("  📄 output/recommendations.txt               - Uzman önerileri ve yorumlar\n\n")
+cat("  📄 output/recommendations.txt               - Uzman önerileri ve yorumlar\n")
+cat(sprintf("  📄 output/*.docx (%d dosya)                  - Word format raporlar\n\n", nrow(metadata)))
 
 cat("OLUŞTURULAN VERİ DOSYALARI (CSV):\n")
 cat("  📊 output/item_statistics.csv               - Madde istatistikleri özeti\n")
